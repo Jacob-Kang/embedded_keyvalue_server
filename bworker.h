@@ -4,7 +4,6 @@
 #include <pthread.h>
 #include "server.h"
 #define NUM_BWORKER 6
-#define MAX_NUM_CLIENT 10
 
 #define BPB_TCP_WORKER 0
 #define BPB_TIERING_SD 1

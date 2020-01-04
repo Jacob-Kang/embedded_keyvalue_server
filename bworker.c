@@ -1,9 +1,9 @@
 #include "bworker.h"
 void *bworkerRecvJobs(void *arg) {
-  int cfd = (int)arg;
-  chkangLog(LOG_NOTICE, "[%d] bworkerRecvJobs created", cfd);
+  int id = (int)arg;
+  chkangLog(LOG_NOTICE, "[%d] bworkerRecvJobs created", id);
   while (1) {
-    tcpRecv(cfd);
+    tcpRecv(server.clients[id]);
     pthread_mutex_lock(&bworker_mutex[BPB_TCP_WORKER]);
     // 버퍼에 서버가 처리할 받은 데이터 저장.
     pthread_mutex_unlock(&bworker_mutex[BPB_TCP_WORKER]);
@@ -28,8 +28,13 @@ void *bworkerProcessBackgroundJobs(void *arg) {
         chkangLog(LOG_ERROR, "fail to call accept()");
         continue;
       }
+      struct kvClient *c = malloc(sizeof(struct kvClient));
+      c->fd = cfd;
+      c->id = server.num_connected_client;
+      c->querybuf = malloc(sizeof(struct msg) + KV_IOBUF_LEN);
+      server.clients[server.num_connected_client++] = c;
       if (pthread_create(c_tid + num_client++, NULL, bworkerRecvJobs,
-                         (void *)cfd) != 0) {
+                         (void *)c->id) != 0) {
         chkangLog(LOG_ERROR, "Fatal: Can't initialize Background Jobs.");
         exit(-1);
       }

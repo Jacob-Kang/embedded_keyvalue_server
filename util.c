@@ -49,6 +49,36 @@ void sdsfree(char *s) {
   if (s == NULL) return;
   free(s - sizeof(struct sdshdr));
 }
+
+int string2ll(const char *s, size_t slen, long long *value) {
+  const char *p = s;
+  size_t plen = 0;
+  int negative = 0;
+  unsigned long long v;
+  if (plen == slen) return 0;
+  if (p[0] >= '1' && p[0] <= '9') {
+    v = p[0] - '0';
+    p++;
+    plen++;
+  } else if (p[0] == '0' && slen == 1) {
+    *value = 0;
+    return 1;
+  } else {
+    return 0;
+  }
+  while (plen < slen && p[0] >= '0' && p[0] <= '9') {
+    if (v > (ULLONG_MAX / 10)) /* Overflow. */
+      return 0;
+    v *= 10;
+    if (v > (ULLONG_MAX - (p[0] - '0'))) /* Overflow. */
+      return 0;
+    v += p[0] - '0';
+    p++;
+    plen++;
+  }
+  *value = v;
+  return 1;
+}
 char *getAbsolutePath(char *filename) {
   char cwd[1024];
 
@@ -135,4 +165,63 @@ void loadServerConfig(char *filename) {
     }
     if (fp != stdin) fclose(fp);
   }
+}
+
+void parsingMessage(struct kvClient *c) {
+  if (c->querybuf->buf[0] != '*') {
+    chkangLog(LOG_ERROR, "Unknown request type");
+    return;
+  }
+  char *newline = NULL;
+  newline = strchr(c->querybuf->buf, '\r');
+  if (newline == NULL) {
+    chkangLog(LOG_ERROR, "Protocol error: unknown msg_len");
+    return;
+  }
+  int msg_len = c->querybuf->buf[1] - '0';
+  // split 한 시점부터 \r\n만큼 뛴 위치를 새로운 pos로 저장
+  int pos = (newline - c->querybuf->buf) + 2;
+  long long len = 0;
+  c->argc = 0;
+  c->argv = malloc(sizeof(struct kvObject *) * msg_len);
+  while (msg_len) {
+    newline = strchr(c->querybuf->buf + pos, '\r');
+    if (c->querybuf->buf[pos] != '$') {
+      chkangLog(LOG_ERROR, "Protocol error: Unknow cmd len");
+      return;
+    }
+    string2ll(c->querybuf->buf + pos + 1,
+              newline - (c->querybuf->buf + pos) + 1, &len);
+    // len = c->querybuf->buf[pos + 1] - '0';
+    pos += newline - (c->querybuf->buf + pos) + 2;
+    c->querybuf->buf[pos + len] = 0;
+    c->argv[c->argc++] = createObject(c->querybuf->buf + pos, len);
+    pos += len + 2;
+    c->querybuf->len = len;
+    msg_len--;
+  }
+}
+
+kvobj *createObject(void *ptr, size_t len) {
+  kvobj *o = malloc(sizeof(kvobj) + sizeof(struct msg) + len + 1);
+  struct msg *msg = (void *)(o + 1);
+
+  o->where = KV_LOC_MEM;
+#ifdef ONLY_SD
+  o->where = KV_LOC_SD; /* key/value is located only in REDIS */
+#endif
+  o->ptr = ptr;
+  o->refcount = 1;
+  // o->lru = LRU_CLOCK();
+  o->writecount = 0;
+  o->readcount = 0;
+  msg->len = len;
+  // msg->free = 0;
+  if (ptr) {
+    memcpy(msg->buf, ptr, len);
+    msg->buf[len] = '\0';
+  } else {
+    memset(msg->buf, 0, len + 1);
+  }
+  return o;
 }

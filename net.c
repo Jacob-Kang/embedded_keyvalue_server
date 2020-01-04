@@ -42,7 +42,7 @@ int tcpAccept(int server_fd) {
   struct sockaddr_in client_addr;
   char ip[IP_STR_LEN];
   int port;
-  int len = sizeof(client_addr);
+  socklen_t len = sizeof(client_addr);
   int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &len);
   if (client_fd == -1) {
     if (errno == EINTR)
@@ -58,15 +58,14 @@ int tcpAccept(int server_fd) {
   return client_fd;
 }
 
-void tcpRecv(int cfd) {
+void tcpRecv(struct kvClient *c) {
   int rst;
-  char msg[128];
-  rst = read(cfd, msg, sizeof(msg));
-  if (rst <= 0)
-    chkangLog(LOG_ERROR, "[%d] recv error", cfd);
-  else  //어떤 아이피로부터 무슨 내용이 왔는지 출력
-        // chkangLog(LOG_NOTICE, "[%d] %s\n", cfd, msg);
-    printf("[%d] %s\n", cfd, msg);
+  rst = read(c->fd, c->querybuf->buf, KV_IOBUF_LEN);
+  if (rst <= 0) chkangLog(LOG_ERROR, "[%d] recv error", c->fd);
+  // else  //어떤 아이피로부터 무슨 내용이 왔는지 출력
+  chkangLog(LOG_NOTICE, "[%d] Recived MSG\n%s", c->fd, c->querybuf->buf);
+  parsingMessage(c);
+  processCMD(c);
   // send와 같은 write를 사용하여 보낸 내용 되돌려줌
   // write(cfd, msg, strlen(msg) + 1);
 }
