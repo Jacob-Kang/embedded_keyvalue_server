@@ -25,6 +25,8 @@ struct sdshdr {
 void chkangLog(int level, const char *fmt, ...);
 char *sdsnewlen(const void *init, size_t initlen);
 char *sdsnew(const char *init);
+int msgcmp(const struct msg *s, const char *dest);
+char *msgdup(const struct msg *s);
 void sdsfree(char *s);
 int string2ll(const char *s, size_t slen, long long *value);
 char *getAbsolutePath(char *filename);

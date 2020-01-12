@@ -25,7 +25,15 @@
 #define KV_LOC_MEM 0
 #define KV_LOC_FLUSHED 1
 #define KV_LOC_SD 2
-typedef struct kvObject {
+
+// typedef struct lookupResult {
+//   struct kvObject *valueObj;
+//   uint64_t isInFlashDb : 1,
+//       rowCount : 63;  // due to the memory alignment in x64 this is ok
+//   int *filteredRowIds;
+// }
+
+struct kvObject {
   volatile unsigned
       where : 2;  // specifies where the k/v is located; 0: REDIS_LOC_REDIS, 1:
                   // REDIS_LOC_FORCEFLUSHED, 2: REDIS_LOC_FLASH
@@ -37,45 +45,41 @@ typedef struct kvObject {
   int refcount;
   uint32_t readcount;
   uint32_t writecount;
-  void *ptr;
-} kvobj;
+  struct msg *ptr;
+};
 
-typedef struct dictEntry {
-  void *key;
-  union {
-    void *val;
-    long long s64;
-  } v;
-  struct dictEntry *next;
-} dictEntry;
-
-typedef struct dictType {
-  unsigned int (*hashFunction)(const void *key);
-  void *(*keyDup)(void *privdata, const void *key);
-  void *(*valDup)(void *privdata, const void *obj);
-  int (*keyCompare)(void *privdata, const void *key1, const void *key2);
-  void (*keyDestructor)(void *privdata, void *key);
-  void (*valDestructor)(void *privdata, void *obj);
-} dictType;
+struct hashEntry {
+  char *key;
+  struct kvObject *val;
+  // union {
+  //   void *val;
+  //   long long s64;
+  // } v;
+  struct hashEntry *next;
+};
 
 /* This is our hash table structure. Every dictionary has two of this as we
  * implement incremental rehashing, for the old to the new table. */
-typedef struct dictht {
-  dictEntry **table;
+struct kvht {
+  struct hashEntry **table;
   unsigned long size;
   unsigned long sizemask;
   unsigned long used;
-} dictht;
+};
 
-typedef struct dict {
-  dictType *type;
-  void *privdata;
-  dictht ht[2];
+struct hash {
+  // dictType *type;
+  // void *privdata;
+  struct kvht ht[2];
   long rehashidx; /* rehashing not in progress if rehashidx == -1 */
   int iterators;  /* number of iterators currently running */
-} dict;
+};
 
-// typedef struct kvDb {};
+struct kvDb {
+  struct hash *memCache;
+  // Queue *populateQueue;
+  void *sdCache;
+};
 
 struct msg {
   unsigned int len;

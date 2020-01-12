@@ -13,7 +13,6 @@
 int tcpConnect(int port);
 int tcpAccept(int server_fd);
 void tcpRecv(struct kvClient *c);
-void tcpSend(int cfd, char *msg, int msg_len);
-// int tcpAccept(void* arg);
+void tcpSend(struct kvClient *c);
 
 #endif

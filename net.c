@@ -64,20 +64,11 @@ void tcpRecv(struct kvClient *c) {
   if (rst <= 0) chkangLog(LOG_ERROR, "[%d] recv error", c->fd);
   // else  //어떤 아이피로부터 무슨 내용이 왔는지 출력
   chkangLog(LOG_NOTICE, "[%d] Recived MSG\n%s", c->fd, c->querybuf->buf);
-  parsingMessage(c);
-  processCMD(c);
-  // send와 같은 write를 사용하여 보낸 내용 되돌려줌
-  // write(cfd, msg, strlen(msg) + 1);
 }
 
-void tcpSend(int cfd, char *msg, int msg_len) {
+void tcpSend(struct kvClient *c) {
   int rst;
-  rst = write(cfd, msg, msg_len);
-  if (rst <= 0)
-    chkangLog(LOG_ERROR, "[%d] send error", cfd);
-  else  //어떤 아이피로부터 무슨 내용이 왔는지 출력
-        // chkangLog(LOG_NOTICE, "[%d] %s\n", cfd, msg);
-    printf("[%d] %s\n", cfd, msg);
-  // send와 같은 write를 사용하여 보낸 내용 되돌려줌
-  // write(cfd, msg, strlen(msg) + 1);
+  rst = write(c->fd, c->querybuf->buf, c->querybuf->len);
+  if (rst <= 0) chkangLog(LOG_ERROR, "[%d] send error", c->fd);
+  chkangLog(LOG_NOTICE, "[%d] Sent MSG\n%s", c->fd, c->querybuf->buf);
 }

@@ -1,12 +1,15 @@
 #include "bworker.h"
 void *bworkerRecvJobs(void *arg) {
   int id = (int)arg;
+  struct kvClient *c = server.clients[id];
   chkangLog(LOG_NOTICE, "[%d] bworkerRecvJobs created", id);
   while (1) {
-    tcpRecv(server.clients[id]);
+    tcpRecv(c);
+    parsingMessage(c);
     pthread_mutex_lock(&bworker_mutex[BPB_TCP_WORKER]);
-    // 버퍼에 서버가 처리할 받은 데이터 저장.
+    processCMD(c);
     pthread_mutex_unlock(&bworker_mutex[BPB_TCP_WORKER]);
+    tcpSend(c);
   }
 }
 void *bworkerProcessBackgroundJobs(void *arg) {
@@ -32,6 +35,7 @@ void *bworkerProcessBackgroundJobs(void *arg) {
       c->fd = cfd;
       c->id = server.num_connected_client;
       c->querybuf = malloc(sizeof(struct msg) + KV_IOBUF_LEN);
+      c->db = &server.db[0];
       server.clients[server.num_connected_client++] = c;
       if (pthread_create(c_tid + num_client++, NULL, bworkerRecvJobs,
                          (void *)c->id) != 0) {

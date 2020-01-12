@@ -49,6 +49,20 @@ void sdsfree(char *s) {
   if (s == NULL) return;
   free(s - sizeof(struct sdshdr));
 }
+int msgcmp(const struct msg *s, const char *dest) {
+  char *src = (char *)(s->buf);
+  if (!strcasecmp(src, dest))
+    return 1;
+  else
+    return 0;
+}
+char *msgdup(const struct msg *s) {
+  char *ret = malloc(s->len + 1);
+  if (s == NULL) return NULL;
+  memcpy(ret, s->buf, s->len);
+  ret[s->len] = '\0';
+  return ret;
+}
 
 int string2ll(const char *s, size_t slen, long long *value) {
   const char *p = s;
@@ -160,6 +174,12 @@ void loadServerConfig(char *filename) {
           }
           fclose(logfp);
         }
+      } else if (!strcasecmp(argv[0], "server-dir") && argc == 2) {
+        if (chdir(argv[1]) == -1) {
+          chkangLog(LOG_NOTICE, "Can't chdir to '%s': %s", argv[1],
+                    strerror(errno));
+          exit(1);
+        }
       }
       argc = 0;
     }
@@ -183,6 +203,10 @@ void parsingMessage(struct kvClient *c) {
   int pos = (newline - c->querybuf->buf) + 2;
   long long len = 0;
   c->argc = 0;
+  if (c->argv) {
+    int i;
+    for (i = 0; i < 2; i++) free(c->argv[i]);
+  }
   c->argv = malloc(sizeof(struct kvObject *) * msg_len);
   while (msg_len) {
     newline = strchr(c->querybuf->buf + pos, '\r');
@@ -202,15 +226,16 @@ void parsingMessage(struct kvClient *c) {
   }
 }
 
-kvobj *createObject(void *ptr, size_t len) {
-  kvobj *o = malloc(sizeof(kvobj) + sizeof(struct msg) + len + 1);
-  struct msg *msg = (void *)(o + 1);
+struct kvObject *createObject(void *ptr, size_t len) {
+  struct kvObject *o =
+      malloc(sizeof(struct kvObject) + sizeof(struct msg) + len + 1);
+  struct msg *msg = o + 1;
 
   o->where = KV_LOC_MEM;
 #ifdef ONLY_SD
   o->where = KV_LOC_SD; /* key/value is located only in REDIS */
 #endif
-  o->ptr = ptr;
+  o->ptr = msg;
   o->refcount = 1;
   // o->lru = LRU_CLOCK();
   o->writecount = 0;

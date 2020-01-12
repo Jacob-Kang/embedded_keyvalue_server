@@ -38,6 +38,22 @@ void initServer(void) {
   setupSignalHandlers();
   // /* Open the TCP listening socket for the user commands. */
   server.ipfd = tcpConnect(server.port);
+  server.db = malloc(sizeof(struct kvDb));
+  server.db->memCache = malloc(sizeof(struct hash));
+  server.db->memCache->ht[0].table = malloc(server.db_size);
+  server.db->memCache->ht[0].size = server.db_size;
+  server.db->memCache->ht[0].sizemask =
+      server.db_size / sizeof(struct hashEntry);
+  server.db->memCache->ht[0].used = 0;
+  int i = 0;
+  // for (i = 0; i < 2; i++) {
+  //   server.db->memCache->ht[i].table = NULL;
+  //   server.db->memCache->ht[i].size = 0;
+  //   server.db->memCache->ht[i].sizemask = 0;
+  //   server.db->memCache->ht[i].used = 0;
+  // }
+  server.db->memCache->iterators = 0;
+  server.db->memCache->rehashidx = -1;
 }
 
 int main(int argc, char** argv) {

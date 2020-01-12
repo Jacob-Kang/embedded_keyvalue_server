@@ -18,7 +18,7 @@ uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 # 	BIN_FOLDER=bin_linux
 # endif
 TARGET=server
-SERVER_OBJ=net.o server.o util.o bworker.o command.o
+SERVER_OBJ=net.o server.o util.o bworker.o command.o hash.o
 
 all: $(TARGET)
 

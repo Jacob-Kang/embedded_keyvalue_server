@@ -3,3 +3,4 @@
 .vs/*
 log*
 server
+redis-cli
