@@ -22,7 +22,7 @@ struct sdshdr {
 // LOG_DEBUG 0
 // LOG_NOTICE 1
 // LOG_ERROR 2
-void chkangLog(int level, const char *fmt, ...);
+void chLog(int level, const char *fmt, ...);
 char *sdsnewlen(const void *init, size_t initlen);
 char *sdsnew(const char *init);
 int msgcmp(const struct msg *s, const char *dest);
@@ -33,4 +33,8 @@ char *getAbsolutePath(char *filename);
 void loadServerConfig(char *filename);
 void parsingMessage(struct kvClient *c);
 struct kvObject *createObject(void *ptr, size_t len);
+void *chmalloc(size_t size);
+void *chcalloc(size_t size);
+void chfree(void *ptr);
+size_t get_used_memory(void);
 #endif

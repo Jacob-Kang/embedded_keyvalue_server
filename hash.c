@@ -12,7 +12,7 @@ int get_hash(struct hash *mc, char *str) {
   //   for (table = 0; table <= 1; table++) {
   for (table = 0; table <= 0; table++) {
     idx = hash_key & mc->ht[table].sizemask;
-    chkangLog(LOG_NOTICE, "hash_key: %d, idx: %d\nmsg: %s", hash_key, idx, str);
+    chLog(LOG_NOTICE, "hash_key: %d, idx: %d\nmsg: %s", hash_key, idx, str);
     he = mc->ht[table].table[idx];
     // 만약 해당 슬롯에 이미 다른 entry가 있을 경우 error return
     while (he) {
@@ -38,7 +38,7 @@ int hashAdd(struct hash *mc, char *key, struct kvObject *val) {
 
   /* Allocate the memory and store the new entry */
   //   ht = dictIsRehashing(d) ? &d->ht[1] : &d->ht[0];
-  entry = malloc(sizeof(*entry));
+  entry = chmalloc(sizeof(*entry));
   entry->next = mc->ht[0].table[index];
   mc->ht[0].table[index] = entry;
   mc->ht[0].used++;
@@ -61,8 +61,8 @@ struct hashEntry *entryFind(struct hash *mc, struct msg *key) {
     // 해당 슬롯에서 entry 찾기. 없으면 NULL
     while (he) {
       if (!strcmp(he->key, key->buf)) {
-        chkangLog(LOG_NOTICE, "hash_key: %d, idx: %d\nmsg: %s", hash_key, idx,
-                  he->key);
+        chLog(LOG_NOTICE, "hash_key: %d, idx: %d\nmsg: %s", hash_key, idx,
+              he->key);
         return he;
       }
       he = he->next;

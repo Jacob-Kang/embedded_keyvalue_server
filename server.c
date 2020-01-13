@@ -38,12 +38,12 @@ void initServer(void) {
   setupSignalHandlers();
   // /* Open the TCP listening socket for the user commands. */
   server.ipfd = tcpConnect(server.port);
-  server.db = malloc(sizeof(struct kvDb));
-  server.db->memCache = malloc(sizeof(struct hash));
-  server.db->memCache->ht[0].table = malloc(server.db_size);
-  server.db->memCache->ht[0].size = server.db_size;
+  server.db = chmalloc(sizeof(struct kvDb));
+  server.db->memCache = chmalloc(sizeof(struct hash));
+  server.db->memCache->ht[0].table = malloc(server.maxmemory);
+  server.db->memCache->ht[0].size = server.maxmemory;
   server.db->memCache->ht[0].sizemask =
-      server.db_size / sizeof(struct hashEntry);
+      server.maxmemory / sizeof(struct hashEntry);
   server.db->memCache->ht[0].used = 0;
   int i = 0;
   // for (i = 0; i < 2; i++) {

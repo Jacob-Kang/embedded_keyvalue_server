@@ -2,7 +2,7 @@
 void *bworkerRecvJobs(void *arg) {
   int id = (int)arg;
   struct kvClient *c = server.clients[id];
-  chkangLog(LOG_NOTICE, "[%d] bworkerRecvJobs created", id);
+  chLog(LOG_NOTICE, "[%d] bworkerRecvJobs created", id);
   while (1) {
     tcpRecv(c);
     parsingMessage(c);
@@ -23,23 +23,23 @@ void *bworkerProcessBackgroundJobs(void *arg) {
     if (type == BPB_TCP_WORKER) {
       int cfd = tcpAccept(server.ipfd);
       if (cfd == MAX_NUM_CLIENT) {
-        chkangLog(LOG_NOTICE, "[%d] connected client full", cfd);
+        chLog(LOG_NOTICE, "[%d] connected client full", cfd);
         close(cfd);
         continue;
       }
       if (cfd < 0) {
-        chkangLog(LOG_ERROR, "fail to call accept()");
+        chLog(LOG_ERROR, "fail to call accept()");
         continue;
       }
-      struct kvClient *c = malloc(sizeof(struct kvClient));
+      struct kvClient *c = chmalloc(sizeof(struct kvClient));
       c->fd = cfd;
       c->id = server.num_connected_client;
-      c->querybuf = malloc(sizeof(struct msg) + KV_IOBUF_LEN);
+      c->querybuf = chmalloc(sizeof(struct msg) + KV_IOBUF_LEN);
       c->db = &server.db[0];
       server.clients[server.num_connected_client++] = c;
       if (pthread_create(c_tid + num_client++, NULL, bworkerRecvJobs,
                          (void *)c->id) != 0) {
-        chkangLog(LOG_ERROR, "Fatal: Can't initialize Background Jobs.");
+        chLog(LOG_ERROR, "Fatal: Can't initialize Background Jobs.");
         exit(-1);
       }
     }
@@ -70,7 +70,7 @@ void bworkerInit(void) {
     void *arg = (void *)(unsigned long)i;
     if (pthread_create(&thread, &attr, bworkerProcessBackgroundJobs, arg) !=
         0) {
-      chkangLog(LOG_ERROR, "Fatal: Can't initialize Background Jobs.");
+      chLog(LOG_ERROR, "Fatal: Can't initialize Background Jobs.");
       exit(-1);
     }
     bworker_threads[i] = thread;

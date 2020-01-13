@@ -1,5 +1,5 @@
 #include "util.h"
-void chkangLog(int level, const char *fmt, ...) {
+void chLog(int level, const char *fmt, ...) {
   va_list ap;
   if ((level & 0xff) < server.verbosity) return;
 
@@ -29,9 +29,9 @@ char *sdsnewlen(const void *init, size_t initlen) {
   struct sdshdr *sh;
 
   if (init) {
-    sh = malloc(sizeof(struct sdshdr) + initlen + 1);
+    sh = chmalloc(sizeof(struct sdshdr) + initlen + 1);
   } else {
-    sh = calloc(1, sizeof(struct sdshdr) + initlen + 1);
+    sh = chcalloc(sizeof(struct sdshdr) + initlen + 1);
   }
   if (sh == NULL) return NULL;
   sh->len = initlen;
@@ -57,7 +57,7 @@ int msgcmp(const struct msg *s, const char *dest) {
     return 0;
 }
 char *msgdup(const struct msg *s) {
-  char *ret = malloc(s->len + 1);
+  char *ret = chmalloc(s->len + 1);
   if (s == NULL) return NULL;
   memcpy(ret, s->buf, s->len);
   ret[s->len] = '\0';
@@ -134,19 +134,37 @@ void loadServerConfig(char *filename) {
       } else if (!strcasecmp(argv[0], "db-dir") && argc == 2) {
         int l = strlen(argv[1]);
         argv[1][l - 1] = 0;
-        char *p = malloc(l);
+        char *p = chmalloc(l);
         memcpy(p, argv[1], l);
         server.db_dir = p;
-      } else if (!strcasecmp(argv[0], "db-size-mb") && argc == 2) {
-        server.db_size = atoi(argv[1]) * 1024L * 1024;
-        if (server.db_size <= 0) {
-          printf("Invalid db-size-mb, value <= 0 is not allowed");
+      } else if (!strcasecmp(argv[0], "memcache-size-mb") && argc == 2) {
+        server.maxmemory = atoi(argv[1]) * 1024L * 1024;
+        if (server.maxmemory <= 0) {
+          chLog(LOG_ERROR, "Invalid db-size-mb, value <= 0 is not allowed");
           exit(-1);
         }
-      } else if (!strcasecmp(argv[0], "db-file-size-mb") && argc == 2) {
-        server.db_file_size = atoi(argv[1]) * 1024L * 1024;
-        if (server.db_size <= 0) {
-          printf("Invalid db-file-size-mb, value <= 0 is not allowed");
+      } else if (!strcasecmp(argv[0], "flashcache-dir") && argc == 2) {
+        zfree(server.flashCache_dir);
+        server.flashCache_dir = zstrdup(argv[1]);
+      } else if (!strcasecmp(argv[0], "flashcache-size-mb") && argc == 2) {
+        server.flashCache_size = atoi(argv[1]) * 1024L * 1024;
+        if (server.flashCache_size <= 0) {
+          chLog(LOG_ERROR,
+                "Invalid nvmcache-size-mb, value <= 0 is not allowed");
+          exit(-1);
+        }
+      } else if (!strcasecmp(argv[0], "flashcache-file-size-kb") && argc == 2) {
+        server.flashCache_file_size = atoi(argv[1]) * 1024;
+        if (server.flashCache_file_size <= 0) {
+          chLog(LOG_ERROR,
+                "Invalid nvmcache-file-size-kb, value <= 0 is not allowed");
+          exit(-1);
+        }
+      } else if (!strcasecmp(argv[0], "flashcache-file-size-mb") && argc == 2) {
+        server.flashCache_file_size = atoi(argv[1]) * 1024 * 1024;
+        if (server.flashCache_file_size <= 0) {
+          chLog(LOG_ERROR,
+                "Invalid nvmcache-file-size-mb, value <= 0 is not allowed");
           exit(-1);
         }
       } else if (!strcasecmp(argv[0], "log-level") && argc == 2) {
@@ -159,7 +177,7 @@ void loadServerConfig(char *filename) {
         FILE *logfp;
         free(server.logfile);
         size_t l = strlen(argv[1]);
-        server.logfile = malloc(l);
+        server.logfile = chmalloc(l);
         argv[1][l - 1] = 0;
         memcpy(server.logfile, argv[1], l);
         if (server.logfile[0] != '\0') {
@@ -168,16 +186,15 @@ void loadServerConfig(char *filename) {
           logfp = fopen(server.logfile, "a");
           if (logfp == NULL) {
             server.logfile[0] = '\0';
-            chkangLog(LOG_NOTICE, "Can't open the log file: %s",
-                      strerror(errno));
+            chLog(LOG_NOTICE, "Can't open the log file: %s", strerror(errno));
             exit(-1);
           }
           fclose(logfp);
         }
       } else if (!strcasecmp(argv[0], "server-dir") && argc == 2) {
         if (chdir(argv[1]) == -1) {
-          chkangLog(LOG_NOTICE, "Can't chdir to '%s': %s", argv[1],
-                    strerror(errno));
+          chLog(LOG_NOTICE, "Can't chdir to '%s': %s", argv[1],
+                strerror(errno));
           exit(1);
         }
       }
@@ -189,13 +206,13 @@ void loadServerConfig(char *filename) {
 
 void parsingMessage(struct kvClient *c) {
   if (c->querybuf->buf[0] != '*') {
-    chkangLog(LOG_ERROR, "Unknown request type");
+    chLog(LOG_ERROR, "Unknown request type");
     return;
   }
   char *newline = NULL;
   newline = strchr(c->querybuf->buf, '\r');
   if (newline == NULL) {
-    chkangLog(LOG_ERROR, "Protocol error: unknown msg_len");
+    chLog(LOG_ERROR, "Protocol error: unknown msg_len");
     return;
   }
   int msg_len = c->querybuf->buf[1] - '0';
@@ -205,13 +222,13 @@ void parsingMessage(struct kvClient *c) {
   c->argc = 0;
   if (c->argv) {
     int i;
-    for (i = 0; i < 2; i++) free(c->argv[i]);
+    for (i = 0; i < 2; i++) chfree(c->argv[i]);
   }
-  c->argv = malloc(sizeof(struct kvObject *) * msg_len);
+  c->argv = chmalloc(sizeof(struct kvObject *) * msg_len);
   while (msg_len) {
     newline = strchr(c->querybuf->buf + pos, '\r');
     if (c->querybuf->buf[pos] != '$') {
-      chkangLog(LOG_ERROR, "Protocol error: Unknow cmd len");
+      chLog(LOG_ERROR, "Protocol error: Unknow cmd len");
       return;
     }
     string2ll(c->querybuf->buf + pos + 1,
@@ -228,7 +245,7 @@ void parsingMessage(struct kvClient *c) {
 
 struct kvObject *createObject(void *ptr, size_t len) {
   struct kvObject *o =
-      malloc(sizeof(struct kvObject) + sizeof(struct msg) + len + 1);
+      chmalloc(sizeof(struct kvObject) + sizeof(struct msg) + len + 1);
   struct msg *msg = o + 1;
 
   o->where = KV_LOC_MEM;
@@ -249,4 +266,35 @@ struct kvObject *createObject(void *ptr, size_t len) {
     memset(msg->buf, 0, len + 1);
   }
   return o;
+}
+
+static int used_memory;
+pthread_mutex_t memory_mutex = PTHREAD_MUTEX_INITIALIZER;
+void *chmalloc(size_t size) {
+  void *ptr = malloc(size);
+  pthread_mutex_lock(&memory_mutex);
+  used_memory += size;
+  pthread_mutex_unlock(&memory_mutex);
+  return ptr;
+}
+void *chcalloc(size_t size) {
+  void *ptr = calloc(1, size);
+  pthread_mutex_lock(&memory_mutex);
+  used_memory += size;
+  pthread_mutex_unlock(&memory_mutex);
+
+  return ptr;
+}
+void chfree(void *ptr) {
+  pthread_mutex_lock(&memory_mutex);
+  used_memory -= malloc_size(ptr);
+  pthread_mutex_unlock(&memory_mutex);
+  free(ptr);
+}
+size_t get_used_memory(void) {
+  size_t um;
+  pthread_mutex_lock(&memory_mutex);
+  um = used_memory;
+  pthread_mutex_unlock(&memory_mutex);
+  return um;
 }

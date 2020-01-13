@@ -77,8 +77,9 @@ struct hash {
 
 struct kvDb {
   struct hash *memCache;
-  // Queue *populateQueue;
-  void *sdCache;
+  struct hash *expires;
+  void *flashCache;
+  void *populateQueue;
 };
 
 struct msg {
@@ -111,8 +112,10 @@ struct kvServer {
   // list *clients;
   // db
   char *db_dir;
-  uint64_t db_size;
-  uint32_t db_file_size;
+  uint64_t maxmemory;
+  char *flashCache_dir;
+  uint64_t flashCache_size;
+  uint32_t flashCache_file_size;
 
   int verbosity;
   char *logfile;
