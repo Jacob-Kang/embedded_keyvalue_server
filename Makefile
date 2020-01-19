@@ -1,24 +1,24 @@
-CCPLUS=g++
 CC=gcc
+CPP=g++
 OPT=-O0
-DEBUG=-g -ggdb
+DEBUG=-g -ggdb #-DWITHOUT_LOG #-DONLY_FLASH #-DWITHOUT_LOG #-DONLY_FLASH
 DEPENDENCY_TARGETS=
-CFLAGS+= $(DEBUG) $(OPT) $(NVKVS_OPT) -std=c11
-CFLAGS+= -lpthread
-LDFLAGS=-Llib
-LIBS=
-
+CFLAGS+= $(DEBUG) $(OPT) -std=c11 
+CXXFLAGS+= $(DEBUG) $(OPT) -std=c++11
+LDFLAGS=-Llib -Iinclude
+LIBS=-pthread
+OBJ_FOLDER = obj
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 # ifeq ($(uname_S),Darwin)
-# 	CFLAGS+=-fPIC
-# 	OBJ_FOLDER=obj_mac
-# 	BIN_FOLDER=bin_mac
+#   CFLAGS+=-fPIC
+#   OBJ_FOLDER=obj_mac
+#   BIN_FOLDER=bin_mac
 # else
-# 	OBJ_FOLDER=obj_linux
-# 	BIN_FOLDER=bin_linux
+#   OBJ_FOLDER=obj_linux
+#   BIN_FOLDER=bin_linux
 # endif
 TARGET=server
-SERVER_OBJ=net.o server.o util.o bworker.o command.o hash.o
+SERVER_OBJ=net.o server.o util.o bworker.o command.o hash.o flashcache.o util_c++.o
 
 all: $(TARGET)
 
@@ -26,13 +26,16 @@ dep:
 	-(cd ../deps && $(MAKE) $(DEPENDENCY_TARGETS))
 
 server: $(SERVER_OBJ)
-	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
+	$(CPP) $(CXXFLAGS) $(LDFLAGS) -o $@ $^ $(LIBS)
+	# mv *.o $(OBJ_FOLDER)/
 
 client: $(CLI_OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
 
-%.o: %.c .make-prerequisites
-	$(CC) -c $<
+%.o: %.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -c $<
+%.o: %.cc
+	$(CPP) $(CXXFLAGS) $(LDFLAGS) -c $<
 
 clean:
-	rm -rf server client $(BIN_FOLDER)/*.o $(OBJ_FOLDER)/*.o *.o
+	rm -rf $(TARGET) $(BIN_FOLDER)/*.o $(OBJ_FOLDER)/*.o *.o

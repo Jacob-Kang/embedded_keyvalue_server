@@ -1,14 +1,24 @@
 #include "bworker.h"
+pthread_t bworker_threads[MAX_BWORKER];
+pthread_mutex_t bworker_mutex;
+sem_t *sem_bworker;
+
 void *bworkerRecvJobs(void *arg) {
   int id = (int)arg;
   struct kvClient *c = server.clients[id];
-  chLog(LOG_NOTICE, "[%d] bworkerRecvJobs created", id);
+  chLog(LOG_NOTICE, "[BWK] %d: bworkerRecvJobs created", id);
   while (1) {
-    tcpRecv(c);
+    int rst = tcpRecv(c);
+    if (rst == 0) {
+      chLog(LOG_NOTICE, "[BWK] %d: Client closed connection", id);
+      chfree(c->querybuf);
+      chfree(c);
+      return NULL;
+    }
     parsingMessage(c);
-    pthread_mutex_lock(&bworker_mutex[BPB_TCP_WORKER]);
     processCMD(c);
-    pthread_mutex_unlock(&bworker_mutex[BPB_TCP_WORKER]);
+    int i;
+    for (i = 0; i < 2; i++) chfree(c->argv[i]);
     tcpSend(c);
   }
 }
@@ -22,8 +32,9 @@ void *bworkerProcessBackgroundJobs(void *arg) {
   while (1) {
     if (type == BPB_TCP_WORKER) {
       int cfd = tcpAccept(server.ipfd);
-      if (cfd == MAX_NUM_CLIENT) {
-        chLog(LOG_NOTICE, "[%d] connected client full", cfd);
+      // Client는 최대 MAX_NUM_CLIENT 만큼 까지만 수용
+      if (num_client == MAX_NUM_CLIENT) {
+        chLog(LOG_NOTICE, "[BWK] %d: connected client full", cfd);
         close(cfd);
         continue;
       }
@@ -37,40 +48,52 @@ void *bworkerProcessBackgroundJobs(void *arg) {
       c->querybuf = chmalloc(sizeof(struct msg) + KV_IOBUF_LEN);
       c->db = &server.db[0];
       server.clients[server.num_connected_client++] = c;
-      if (pthread_create(c_tid + num_client++, NULL, bworkerRecvJobs,
+      if (pthread_create(c_tid + num_client, NULL, bworkerRecvJobs,
                          (void *)c->id) != 0) {
-        chLog(LOG_ERROR, "Fatal: Can't initialize Background Jobs.");
+        chLog(LOG_ERROR, "[BWK] Fatal: Can't initialize Background Jobs.");
         exit(-1);
       }
+      bworker_threads[NUM_BWORKER + c->id] = c_tid + num_client;
+      num_client++;
+    } else if (type == BPB_TIERING_FLASH) {
+      sem_wait(sem_bworker);
+      struct hashEntry *he = QueueDequeue(server.db->memQueue);
+      char *evict_key = he->key;
+      struct kvObject *valueObj = he->val;
+      pthread_mutex_lock(&bworker_mutex);
+      flashCacheInsert(server.db->flashCache, evict_key, valueObj->ptr->buf,
+                       valueObj->ptr->len);
+      LRUCacheErase(server.db->memLRU, evict_key);
+      chfree(he->key);
+      chfree(he->val);
+      chfree(he);
+      pthread_mutex_unlock(&bworker_mutex);
     }
   }
 }
 void bworkerInit(void) {
-  pthread_attr_t attr;
   pthread_t thread;
-  size_t stacksize;
-  int i;
-
-  /* Initialization of state vars and objects */
-  for (i = 0; i < NUM_BWORKER; i++) {
-    pthread_mutex_init(&bworker_mutex[i], NULL);
-    pthread_cond_init(&bworker_cond[i], NULL);
-    // bio_jobs[j] = listCreate();
-    // bio_pending[j] = 0;
+  pthread_mutex_init(&bworker_mutex, NULL);
+#ifdef __APPLE__
+  sem_bworker = sem_open("sem_bworker", O_CREAT, S_IRWXU, 0);
+  if (sem_bworker == SEM_FAILED) {
+    chLog(LOG_ERROR, "unable to create Background semaphore");
+    sem_unlink(sem_bworker);
+    exit(-1);
   }
+#else
+  int ret = sem_init(sem_bworker, 0, 0);
+  if (ret == -1) {
+    chLog(LOG_ERROR, "Background semaphore init fail");
+    exit(-1);
+  }
+#endif
 
-  //   /* Set the stack size as by default it may be small in some system */
-  pthread_attr_init(&attr);
-  pthread_attr_getstacksize(&attr, &stacksize);
-  if (!stacksize) stacksize = 1; /* The world is full of Solaris Fixes */
-  while (stacksize < THREAD_STACK_SIZE) stacksize *= 2;
-  pthread_attr_setstacksize(&attr, stacksize);
-
+  int i;
   for (i = 0; i < NUM_BWORKER; i++) {
     void *arg = (void *)(unsigned long)i;
-    if (pthread_create(&thread, &attr, bworkerProcessBackgroundJobs, arg) !=
-        0) {
-      chLog(LOG_ERROR, "Fatal: Can't initialize Background Jobs.");
+    if (pthread_create(&thread, NULL, bworkerProcessBackgroundJobs, arg) != 0) {
+      chLog(LOG_ERROR, "[BWK] Fatal: Can't initialize Background Jobs.");
       exit(-1);
     }
     bworker_threads[i] = thread;

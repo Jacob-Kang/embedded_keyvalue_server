@@ -4,8 +4,9 @@
 #include "hash.h"
 #include "server.h"
 #include "util.h"
+// #include "util_c++.h"
+int memUsedCheck(struct kvClient *c);
 int processCMD(struct kvClient *c);
-int memUsedCheck();
 void setGenericCommand(struct kvClient *c, struct kvObject *key,
                        struct kvObject *val);
 int getGenericCommand(struct kvClient *c, struct kvObject *key);

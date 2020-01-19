@@ -4,3 +4,7 @@
 log*
 server
 redis-cli
+include/*
+lib/*
+.gitignore
+flash_db

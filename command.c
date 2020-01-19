@@ -1,196 +1,131 @@
 #include "command.h"
+int memUsedCheck(struct kvClient *c) {
+  size_t mem_used = 0;
+  mem_used = get_used_memory();
+  // flush 시킬 object background에게 보내기
+  if (mem_used > server.maxmemory * 90.0 / 100 &&
+      LRUCacheSize(c->db->memLRU) > 0) {
+    struct hashEntry *he;
+    char *evict_key = NULL;
+    struct kvObject *valueObj;
+    he = LRUCacheEvict(c->db->memLRU);
+    valueObj = he->val;
+    if (valueObj->where == KV_LOC_MEM) {
+      evict_key = he->key;
+      valueObj->where = KV_LOC_FLUSHING;
+      QueueEnqueue(c->db->memQueue, he);
+      sem_post(sem_bworker);
+    }
+  }
 
-void dbAdd(struct kvDb *db, struct kvObject *key, struct kvObject *val) {
-  char *copy = msgdup((struct msg *)key->ptr);
-  int retval = hashAdd(db->memCache, copy, val);
-  if (retval == -1) chLog(LOG_ERROR, "dbAdd error");
-  // redisAssertWithInfo(NULL, key, retval == REDIS_OK);
-  // if (val->type == REDIS_LIST) signalListAsReady(db, key);
-}
+  mem_used = get_used_memory();
+  if (mem_used < server.maxmemory) return 0;
 
-void dbOverwrite(struct hashEntry *he, struct kvObject *val) {
-  //   dictEntry *de = dictFind(db->dict, key->ptr);
-  he->val = val;
-  //   redisAssertWithInfo(NULL, key, de != NULL);
-  //   dictReplace(db->dict, key->ptr, val);
-}
-
-struct hashEntry *lookupKey(struct kvDb *db, struct kvObject *key) {
-  struct hashEntry *he = entryFind(db->memCache, key->ptr);
-  if (he) {
-    // struct msg *val = he->val;
-
-    /* Update the access time for the ageing algorithm.
-     * Don't do it if we have a saving child, as this will trigger
-     * a copy on write madness. */
-    // val->lru = LRU_CLOCK();
-    // return val;
-    return he;
-  } else {
-    return NULL;
+  // 메모리 용량 초과
+  if (mem_used >= server.maxmemory) {
+    while (QueueSize(c->db->memQueue) > 0) {
+    }
   }
 }
-
 int processCMD(struct kvClient *c) {
   if (msgcmp(c->argv[0]->ptr, "set")) {
-    memUsedCheck();
+    memUsedCheck(c);
+    pthread_mutex_lock(&bworker_mutex);
     setGenericCommand(c, c->argv[1], c->argv[2]);
+    pthread_mutex_unlock(&bworker_mutex);
   } else if (msgcmp(c->argv[0]->ptr, "get")) {
+    pthread_mutex_lock(&bworker_mutex);
     getGenericCommand(c, c->argv[1]);
+    pthread_mutex_unlock(&bworker_mutex);
   } else if (msgcmp(c->argv[0]->ptr, "scan")) {
-  }
-}
-
-int memUsedCheck() {
-  size_t mem_used;
-  mem_used = get_used_memory();
-
-  // flush 시킬 object background에게 보내기
-  //   if (mem_used > server.maxmemory * 90 / 100) {
-  //     int j, k;
-  //     for (j = 0; j < 1; j++) {
-  //       char *bestkey = NULL;
-  //       struct hashEntry *de;
-  //       struct kvDb *db = server.db + j;
-  //       struct hash *dict;
-  //       struct kvObject *valueObj;
-  //       dict = server.db[j].expires;
-  //       if (!isFull(db->populateQueue)) {
-  //         struct evictionPoolEntry *pool = db->eviction_pool;
-  //         int retry_cnt = 0;
-  //         while (bestkey == NULL && retry_cnt < 10) {
-  //           evictionPoolPopulate(dict, db->dict, db->eviction_pool);
-  //           /* Go backward from best to worst element to evict. */
-  //           for (k = REDIS_EVICTION_POOL_SIZE - 1; k >= 0; k--) {
-  //             if (pool[k].key == NULL) continue;
-  //             de = dictFind(dict, pool[k].key);
-
-  //             /* Remove the entry from the pool. */
-  //             sdsfree(pool[k].key);
-  //             /* Shift all elements on its right to left. */
-  //             memmove(pool + k, pool + k + 1,
-  //                     sizeof(pool[0]) * (REDIS_EVICTION_POOL_SIZE - k - 1));
-  //             /* Clear the element on the right which is empty
-  //              * since we shifted one position to the left.  */
-  //             pool[REDIS_EVICTION_POOL_SIZE - 1].key = NULL;
-  //             pool[REDIS_EVICTION_POOL_SIZE - 1].idle = 0;
-
-  //             /* If the key exists, is our pick. Otherwise it is
-  //              * a ghost and we need to try the next element. */
-  //             if (de) {
-  //               valueObj = dictGetVal(de);
-  //               // CHKang: without entry already enqueued
-  //               if (valueObj->where == REDIS_LOC_REDIS) {
-  //                 bestkey = dictGetKey(de);
-  //                 // Because of inclusive cache policy, this key is already
-  //                 exist. if (valueObj->writecount == 0) {
-  //                   redisLog(REDIS_WARNING,
-  //                            "[DELETE] %s\tjust delete cause of clean data.",
-  //                            bestkey);
-  //                   valueObj->where = REDIS_LOC_NVM;
-  //                 } else {
-  //                   flushRedisDictToNVM(db, de, false);
-  //                 }
-  //                 // redisLog(REDIS_WARNING, "Mem used: %f%, ",
-  //                 // (float)mem_used/server.maxmemory*100);
-  //                 int status;
-  //                 if ((status = enqueue(&(db->populateQueue), de)) ==
-  //                     ENQUEUE_FAILURE) {
-  //                   redisLog(REDIS_WARNING,
-  //                            "Must be evicted before nvwriteCommand.");
-  //                   redisAssert(0);
-  //                 }
-  //                 break;
-  //               }
-  //             } else {
-  //               /* Ghost... */
-  //               continue;
-  //             }
-  //           }
-  //           retry_cnt++;
-  //         }
-  //       }
-  //     }
-  //   }
-  //   mem_used = getUsedMemory();
-  //   /* Check if we are over the memory limit. */
-  //   if (mem_used < server.maxmemory) return 0;
-  //   /* Used memory exceeds threshold. */
-  //   if (mem_used >= server.maxmemory) {
-  //     struct hashEntry *target = NULL;
-  //     int j, k, keys_freed = 0;
-  //     for (j = 0; j < 1; j++) {
-  //       struct kvDb *db = server.db + j;
-  //       char *bestkey = NULL;
-  //       struct kvObject *valueObj;
-  //     force_flush:
-  //       while (keys_freed < 1 && (target = dequeue(db->populateQueue)) !=
-  //       NULL) {
-  //         bestkey = dictGetKey(target);
-  //         // robj *valobj = dictGetVal(target);
-  //         struct kvObject *keyobj = createStringObject(bestkey,
-  //         sdslen(bestkey));
-  //         // redisLog(REDIS_WARNING, "Mem used: %f%\t[PQ]Dequeue(%d/%d) WR:
-  //         %d,
-  //         // \t%x\t%s", (float)mem_used/server.maxmemory*100,
-  //         // PQsize(db->priorityQueue), PQMaxsize(db->priorityQueue),
-  //         // valobj->writecount, target, bestkey); redisLog(REDIS_WARNING,
-  //         "Mem
-  //         // used: %f%\t[PQ]Dequeue(%d/%d) WR: %d, \t%x\t%s",
-  //         // (float)mem_used/server.maxmemory*100, PQsize(db->priorityQueue),
-  //         // PQMaxsize(db->priorityQueue), valobj->writecount, target,
-  //         bestkey);
-  //         // propagateExpire(db, keyobj);
-  //         struct kvObject *argv[2];
-  //         // argv[0] = shared.del;
-  //         argv[1] = keyobj;
-  //         dbDelete(db, keyobj);
-  //         keys_freed++;
-  //         // dbEvict(db, keyobj);
-  //         // db->evictedKeys++;
-  //         // server.stat_evictedkeys++;
-  //       }
-  //       mem_used = getUsedMemory();
-  //     }
-  //     if (!keys_freed) {
-  //       if (mem_used > server.maxmemory * 110 / 100) {
-  //         chLog(
-  //             LOG_NOTICE,
-  //             "Memory is full. Eviction does not guarantee the capable
-  //             memory.");
-  //         return -1; /* nothing to free... */
-  //       }
-  //       if (mem_used > server.maxmemory * 120 / 100) goto force_flush;
-  //     }
-  //   }
-  //   return 0;
-  // }
-  void setGenericCommand(struct kvClient * c, struct kvObject * key,
-                         struct kvObject * val) {
-    struct hashEntry *he = lookupKey(c->db, key);
-    if (he == NULL) {
-      // if (lookupKeyWrite(c->db, key) == NULL) {
-      // incrCount(val, WRITECOUNT);
-      dbAdd(c->db, key, val);
-      // server.stat_write_misses++;
-    } else {
-      // incrCount(val, WRITECOUNT);
-      // val->where = REDIS_LOC_UPDATED;
-      dbOverwrite(he, val);
-      // server.stat_write_hits++;
-    }
+  } else if (msgcmp(c->argv[0]->ptr, "kill")) {
+    flashCacheDestroy(server.db->flashCache);
+    // pid_t pid = getpid();
+    // kill(pid, 2);
+  } else if (msgcmp(c->argv[0]->ptr, "evict")) {
+    // memUsedCheck(c);
+  } else {
     char *msg = "+OK\r\n";
     c->querybuf->len = strlen(msg);
     memcpy(c->querybuf->buf, msg, c->querybuf->len);
+    c->querybuf->buf[c->querybuf->len - 1] = 0;
   }
+}
+void cacheAdd(struct kvDb *db, struct kvObject *key, struct kvObject *val) {
+  if (server.cache_mode == MODE_MEM_FIFO) {
+    struct hashEntry *he = entryFind(db->memCache, key->ptr);
+    if (he == NULL) {
+      char *copy = msgdup((struct msg *)key->ptr);
+      hashAdd(db->memCache, copy, val);
+    } else {
+      he->val = val;
+    }
+  } else if (server.cache_mode == MODE_MEM_LRU) {
+    struct hashEntry *he = LRUCacheGet(db->memLRU, key->ptr->buf);
+    if (he == NULL) {
+      char *copy = msgdup((struct msg *)key->ptr);
+      struct hashEntry *entry = chmalloc(sizeof(*entry));
+      entry->key = copy;
+      entry->val = val;
+      LRUCacheInsert(db->memLRU, (char *)key->ptr->buf, entry);
+    } else {
+      he->val = val;
+    }
+  }
+}
+void setGenericCommand(struct kvClient *c, struct kvObject *key,
+                       struct kvObject *val) {
+  if (server.cache_mode == MODE_ONLY_FLASH) {
+    flashCacheInsert(c->db->flashCache, (char *)key->ptr->buf,
+                     (char *)val->ptr->buf, val->ptr->len);
+  } else {
+    cacheAdd(c->db, key, val);
+  }
+  char *msg = "+OK\r\n";
+  c->querybuf->len = strlen(msg);
+  memcpy(c->querybuf->buf, msg, c->querybuf->len);
+  c->querybuf->buf[c->querybuf->len] = 0;
+}
 
-  int getGenericCommand(struct kvClient * c, struct kvObject * key) {
-    struct hashEntry *he = lookupKey(c->db, key);
+int getGenericCommand(struct kvClient *c, struct kvObject *key) {
+  char *ret_val = NULL;
+  int val_size = 0;
+  if (server.cache_mode == MODE_ONLY_FLASH) {
+    if (ret_val =
+            flashCacheLookup(c->db->flashCache, key->ptr->buf, &val_size)) {
+      c->querybuf->len =
+          sprintf(c->querybuf->buf, "$%d\r\n%s\r\n", val_size, ret_val);
+    } else {
+      c->querybuf->len = sprintf(c->querybuf->buf, "$7\r\n+Empty!\r\n");
+    }
+  } else {
+    struct hashEntry *he;
+    // 메모리에서 1차 검색
+    if (server.cache_mode == MODE_MEM_FIFO) {
+      he = entryFind(c->db->memCache, key->ptr);
+    } else if (server.cache_mode == MODE_MEM_LRU) {
+      he = LRUCacheGet(c->db->memLRU, (char *)key->ptr->buf);
+    }
+    // 메모리에서 찾음
     if (he) {
       c->querybuf->len = sprintf(c->querybuf->buf, "$%d\r\n%s\r\n",
                                  he->val->ptr->len, he->val->ptr->buf);
-      return 0;
-    } else
-      c->querybuf->len = sprintf(c->querybuf->buf, "$7\r\n+Empty!\r\n");
-    return NULL;
+    } else {
+      // flahs에서 2차 검색
+      if (ret_val =
+              flashCacheLookup(c->db->flashCache, key->ptr->buf, &val_size)) {
+        // flashCache에서 찾은 값을 memory에 다시 업데이트
+        struct kvObject *new_val = createObject(ret_val, val_size);
+        cacheAdd(c->db, key, new_val);
+        flashCacheMetakey(c->db->flashCache, key->ptr->buf);
+        c->querybuf->len =
+            sprintf(c->querybuf->buf, "$%d\r\n%s\r\n", val_size, ret_val);
+
+      } else {
+        // flash에서도 못찾음.
+        c->querybuf->len = sprintf(c->querybuf->buf, "$7\r\n+Empty!\r\n");
+      }
+    }
   }
+  return 0;
+}

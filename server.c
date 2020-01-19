@@ -14,55 +14,55 @@ static void sigShutdownHandler(int sig) {
     default:
       msg = "Received shutdown signal, scheduling shutdown...";
   };
-
+  chLog(LOG_NOTICE, "%s", msg);
   if (sig == SIGINT) {
     printf("You insist... exiting now.\n");
+    flashCacheDestroy(server.db->flashCache);
     exit(1);
   }
 }
-void setupSignalHandlers(void) {
-  struct sigaction act;
-
-  /* When the SA_SIGINFO flag is set in sa_flags then sa_sigaction is used.
-   * Otherwise, sa_handler is used. */
-  sigemptyset(&act.sa_mask);
-  act.sa_flags = 0;
-  act.sa_handler = sigShutdownHandler;
-  sigaction(SIGTERM, &act, NULL);
-  sigaction(SIGINT, &act, NULL);
-  return;
+int setupSignalHandlers(void) {
+  sighandler_t sig_ret;
+  sig_ret = signal(SIGTERM, sigShutdownHandler);
+  if (sig_ret == SIG_ERR) {
+    chLog(LOG_ERROR, "[server] can't set SIGTERM handler");
+    return EXIT_FAILURE;
+  }
+  signal(SIGINT, sigShutdownHandler);
+  if (sig_ret == SIG_ERR) {
+    chLog(LOG_ERROR, "[server] can't set SIGINT handler");
+    return EXIT_FAILURE;
+  }
+  return 0;
 }
-
 void initServer(void) {
   server.pid = getpid();
   setupSignalHandlers();
   // /* Open the TCP listening socket for the user commands. */
   server.ipfd = tcpConnect(server.port);
   server.db = chmalloc(sizeof(struct kvDb));
-  server.db->memCache = chmalloc(sizeof(struct hash));
-  server.db->memCache->ht[0].table = malloc(server.maxmemory);
-  server.db->memCache->ht[0].size = server.maxmemory;
-  server.db->memCache->ht[0].sizemask =
-      server.maxmemory / sizeof(struct hashEntry);
-  server.db->memCache->ht[0].used = 0;
-  int i = 0;
-  // for (i = 0; i < 2; i++) {
-  //   server.db->memCache->ht[i].table = NULL;
-  //   server.db->memCache->ht[i].size = 0;
-  //   server.db->memCache->ht[i].sizemask = 0;
-  //   server.db->memCache->ht[i].used = 0;
-  // }
-  server.db->memCache->iterators = 0;
-  server.db->memCache->rehashidx = -1;
+  if (server.cache_mode == MODE_MEM_FIFO) {
+    server.db->memCache = chmalloc(sizeof(struct hash));
+    server.db->memCache->ht[0].size = 100;
+    server.db->memCache->ht[0].sizemask = 100;
+    server.db->memCache->ht[0].used = 0;
+    server.db->memCache->ht[0].table =
+        chcalloc(sizeof(struct hashEntry*) * 100);
+    server.db->memCache->iterators = 0;
+  } else if (server.cache_mode == MODE_MEM_LRU)
+    server.db->memLRU = LRUCacheCreate(server.db);
+  server.db->memQueue = QueueCreate(server.db);
+  server.db->flashCache =
+      flashCacheCreate(server.flashCache_dir, server.db, server.flashCache_size,
+                       server.flashCache_file_size);
 }
-
 int main(int argc, char** argv) {
   //   initServerConfig();
   if (argc >= 2) {
     char* configfile = NULL;
     configfile = argv[1];
-    if (configfile) server.configfile = getAbsolutePath(configfile);
-    loadServerConfig(server.configfile);
+    //    if (configfile) server.configfile = getAbsolutePath(configfile);
+    loadServerConfig(configfile);
   } else {
     printf("ex: %s conf/server.conf\n", argv[0]);
     exit(-1);

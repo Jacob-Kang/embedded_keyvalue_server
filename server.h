@@ -4,9 +4,11 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <sys/syscall.h>
+#include <unistd.h>
 #include "bworker.h"
 #include "net.h"
 #include "util.h"
+#include "util_c++.h"
 /* Log levels */
 #define LOG_DEBUG 0
 #define LOG_NOTICE 1
@@ -16,16 +18,17 @@
 #define IP_STR_LEN 46
 #define MAX_LOGMSG_LEN 1024
 
-#define MAX_NUM_CLIENT 10
+#define MAX_NUM_CLIENT 8
 
 #define KV_IOBUF_LEN (1024 * 16) /* Generic I/O buffer size */
 
 #define LRU_BITS 22
 
 #define KV_LOC_MEM 0
-#define KV_LOC_FLUSHED 1
-#define KV_LOC_SD 2
+#define KV_LOC_FLUSHING 1
+#define KV_LOC_FLASH 2
 
+typedef void (*sighandler_t)(int);
 // typedef struct lookupResult {
 //   struct kvObject *valueObj;
 //   uint64_t isInFlashDb : 1,
@@ -77,7 +80,9 @@ struct hash {
 
 struct kvDb {
   struct hash *memCache;
-  struct hash *expires;
+  void *memLRU;
+  void *memQueue;
+  // struct hash *expires;
   void *flashCache;
   void *populateQueue;
 };
@@ -98,6 +103,10 @@ struct kvClient {
   struct msg *querybuf;
 };
 
+#define MODE_ONLY_FLASH 1
+#define MODE_MEM_FIFO 2
+#define MODE_MEM_LRU 3
+#define MODE_FLASH_WRITEBUFFER 4
 struct kvServer {
   int pid; /* Main process pid. */
   char *configfile;
@@ -115,9 +124,12 @@ struct kvServer {
   uint64_t maxmemory;
   char *flashCache_dir;
   uint64_t flashCache_size;
+  uint64_t flashCache_writebuffer_size;
   uint32_t flashCache_file_size;
 
-  int verbosity;
+  uint32_t cache_mode;
+  uint32_t flashcache_mode;
+  uint32_t verbosity;
   char *logfile;
 };
 

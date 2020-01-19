@@ -1,3 +1,4 @@
+
 #include "util.h"
 void chLog(int level, const char *fmt, ...) {
   va_list ap;
@@ -95,20 +96,23 @@ int string2ll(const char *s, size_t slen, long long *value) {
 }
 char *getAbsolutePath(char *filename) {
   char cwd[1024];
-
-  char *abspath;
-  char *relpath = sdsnew(filename);
+  int l = strlen(filename);
+  char *relpath = chmalloc(l);
+  memcpy(relpath, filename, l);
 
   // 시작 주소가  root이면 절대주소로 간주
   if (relpath[0] == '/') return relpath;
   if (getcwd(cwd, sizeof(cwd)) == NULL) {
-    sdsfree(relpath);
+    chfree(relpath);
     return NULL;
   }
-  abspath = sdsnew(cwd);
+  char *abspath = chmalloc(l);
+  memcpy(abspath, cwd, l + strlen(cwd) + 2);
+
   abspath = strcat(abspath, "/");
   abspath = strcat(abspath, relpath);
-  sdsfree(relpath);
+  abspath[strlen(abspath)] = 0;
+  chfree(relpath);
   return abspath;
 }
 
@@ -131,43 +135,72 @@ void loadServerConfig(char *filename) {
       }
       if (!strcasecmp(argv[0], "port") && argc == 2) {
         server.port = atoi(argv[1]);
-      } else if (!strcasecmp(argv[0], "db-dir") && argc == 2) {
+      } else if (!strcasecmp(argv[0], "memcache-size-mb") && argc == 2) {
+        server.maxmemory = atoi(argv[1]) * 1024L * 1024;
+        if (server.maxmemory <= 0) {
+          chLog(LOG_ERROR,
+                "Invalid memcache-size-mb, value <= 0 is not allowed");
+          exit(-1);
+        }
+      } else if (!strcasecmp(argv[0], "memcache-size-kb") && argc == 2) {
+        server.maxmemory = atoi(argv[1]) * 1024L;
+        if (server.maxmemory <= 0) {
+          chLog(LOG_ERROR,
+                "Invalid memcache-size-mb, value <= 0 is not allowed");
+          exit(-1);
+        }
+      } else if (!strcasecmp(argv[0], "flashcache-dir") && argc == 2) {
         int l = strlen(argv[1]);
         argv[1][l - 1] = 0;
         char *p = chmalloc(l);
         memcpy(p, argv[1], l);
-        server.db_dir = p;
-      } else if (!strcasecmp(argv[0], "memcache-size-mb") && argc == 2) {
-        server.maxmemory = atoi(argv[1]) * 1024L * 1024;
-        if (server.maxmemory <= 0) {
-          chLog(LOG_ERROR, "Invalid db-size-mb, value <= 0 is not allowed");
-          exit(-1);
-        }
-      } else if (!strcasecmp(argv[0], "flashcache-dir") && argc == 2) {
-        zfree(server.flashCache_dir);
-        server.flashCache_dir = zstrdup(argv[1]);
+        server.flashCache_dir = p;
       } else if (!strcasecmp(argv[0], "flashcache-size-mb") && argc == 2) {
         server.flashCache_size = atoi(argv[1]) * 1024L * 1024;
         if (server.flashCache_size <= 0) {
           chLog(LOG_ERROR,
-                "Invalid nvmcache-size-mb, value <= 0 is not allowed");
+                "Invalid flashcache-size-mb, value <= 0 is not allowed");
           exit(-1);
         }
       } else if (!strcasecmp(argv[0], "flashcache-file-size-kb") && argc == 2) {
         server.flashCache_file_size = atoi(argv[1]) * 1024;
         if (server.flashCache_file_size <= 0) {
           chLog(LOG_ERROR,
-                "Invalid nvmcache-file-size-kb, value <= 0 is not allowed");
+                "Invalid flashcache-file-size-kb, value <= 0 is not allowed");
           exit(-1);
         }
       } else if (!strcasecmp(argv[0], "flashcache-file-size-mb") && argc == 2) {
         server.flashCache_file_size = atoi(argv[1]) * 1024 * 1024;
         if (server.flashCache_file_size <= 0) {
           chLog(LOG_ERROR,
-                "Invalid nvmcache-file-size-mb, value <= 0 is not allowed");
+                "Invalid flashcache-file-size-mb, value <= 0 is not allowed");
           exit(-1);
         }
+      } else if (!strcasecmp(argv[0], "flashcache-writebuffer-size-b") &&
+                 argc == 2) {
+        server.flashCache_writebuffer_size = atoi(argv[1]);
+        if (server.flashCache_writebuffer_size <= 0) {
+          chLog(LOG_ERROR,
+                "Invalid flashcache-writebuffer-size-b, value <= 0 is not "
+                "allowed");
+          exit(-1);
+        }
+      } else if (!strcasecmp(argv[0], "server-mode") && argc == 2) {
+        argv[argc - 1][strlen(argv[argc - 1]) - 1] = 0;
+        if (!strcasecmp(argv[1], "ONLY-FLASH")) {
+          server.cache_mode = MODE_ONLY_FLASH;
+        } else if (!strcasecmp(argv[1], "MEM-FIFO")) {
+          server.cache_mode = MODE_MEM_FIFO;
+        } else if (!strcasecmp(argv[1], "MEM-LRU")) {
+          server.cache_mode = MODE_MEM_LRU;
+        }
+      } else if (!strcasecmp(argv[0], "flashcache-mode") && argc == 2) {
+        argv[argc - 1][strlen(argv[argc - 1]) - 1] = 0;
+        if (!strcasecmp(argv[1], "FLASH-WRITEBUFFER")) {
+          server.flashcache_mode = MODE_FLASH_WRITEBUFFER;
+        }
       } else if (!strcasecmp(argv[0], "log-level") && argc == 2) {
+        argv[argc - 1][strlen(argv[argc - 1]) - 1] = 0;
         if (!strcasecmp(argv[1], "notice")) {
           server.verbosity = LOG_NOTICE;
         } else if (!strcasecmp(argv[1], "debug")) {
@@ -220,10 +253,6 @@ void parsingMessage(struct kvClient *c) {
   int pos = (newline - c->querybuf->buf) + 2;
   long long len = 0;
   c->argc = 0;
-  if (c->argv) {
-    int i;
-    for (i = 0; i < 2; i++) chfree(c->argv[i]);
-  }
   c->argv = chmalloc(sizeof(struct kvObject *) * msg_len);
   while (msg_len) {
     newline = strchr(c->querybuf->buf + pos, '\r');
@@ -271,24 +300,29 @@ struct kvObject *createObject(void *ptr, size_t len) {
 static int used_memory;
 pthread_mutex_t memory_mutex = PTHREAD_MUTEX_INITIALIZER;
 void *chmalloc(size_t size) {
-  void *ptr = malloc(size);
+  void *ptr = malloc(size + sizeof(int));
+  int *used_size = ptr;
+  *used_size = size;
   pthread_mutex_lock(&memory_mutex);
-  used_memory += size;
+  used_memory += (size + sizeof(int));
   pthread_mutex_unlock(&memory_mutex);
-  return ptr;
+  return (char *)ptr + sizeof(int);
 }
 void *chcalloc(size_t size) {
-  void *ptr = calloc(1, size);
+  void *ptr = calloc(1, size + sizeof(int));
+  int *used_size = ptr;
+  *used_size = size;
   pthread_mutex_lock(&memory_mutex);
   used_memory += size;
   pthread_mutex_unlock(&memory_mutex);
-
-  return ptr;
+  return (char *)ptr + sizeof(int);
 }
 void chfree(void *ptr) {
+  int *used_size = (char *)ptr - sizeof(int);
   pthread_mutex_lock(&memory_mutex);
   used_memory -= malloc_size(ptr);
   pthread_mutex_unlock(&memory_mutex);
+  ptr = (char *)ptr - sizeof(int);
   free(ptr);
 }
 size_t get_used_memory(void) {

@@ -3,14 +3,13 @@
 
 #include <errno.h>
 #include <limits.h>
-#include <server.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include <sys/types.h>
-#include <time.h>
 #include <unistd.h>
 #include "server.h"
 
@@ -22,7 +21,13 @@ struct sdshdr {
 // LOG_DEBUG 0
 // LOG_NOTICE 1
 // LOG_ERROR 2
+#ifdef __cplusplus
+extern "C" {
+#endif
 void chLog(int level, const char *fmt, ...);
+#ifdef __cplusplus
+}
+#endif
 char *sdsnewlen(const void *init, size_t initlen);
 char *sdsnew(const char *init);
 int msgcmp(const struct msg *s, const char *dest);

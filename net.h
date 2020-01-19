@@ -12,7 +12,7 @@
 
 int tcpConnect(int port);
 int tcpAccept(int server_fd);
-void tcpRecv(struct kvClient *c);
+int tcpRecv(struct kvClient *c);
 void tcpSend(struct kvClient *c);
 
 #endif
