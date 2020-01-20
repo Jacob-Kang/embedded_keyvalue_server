@@ -14,7 +14,11 @@
 
 extern pthread_t bworker_threads[MAX_BWORKER];
 extern pthread_mutex_t bworker_mutex;
+#ifdef __APPLE__
 extern sem_t *sem_bworker;
+#else
+extern sem_t sem_bworker;
+#endif
 
 void bworkerInit(void);
 #endif

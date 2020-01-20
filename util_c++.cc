@@ -5,7 +5,7 @@
 #include "util_c++.h"
 extern "C" {
 
-void *LRUCacheCreate(struct kvDb *db) {
+void *LRUCacheCreate() {
   void *mem_lru =
       static_cast<void *>(new lru_cache<std::string, struct hashEntry *>);
   return mem_lru;
@@ -49,7 +49,7 @@ int LRUCacheSize(void *mlru) {
   return 0;
 }
 
-void *QueueCreate(struct kvDb *db) {
+void *QueueCreate() {
   void *q = static_cast<void *>(new std::queue<struct hashEntry *>);
   return q;
 }
@@ -73,6 +73,41 @@ int QueueSize(void *mq) {
   return 0;
 }
 
+void *ListCreate() {
+  void *q = static_cast<void *>(new std::list<struct hashEntry *>);
+  return q;
+}
+void ListPushFront(void *mq, struct hashEntry *_val) {
+  std::list<struct hashEntry *> *q =
+      static_cast<std::list<struct hashEntry *> *>(mq);
+  q->push_front(_val);
+}
+void ListPushBack(void *mq, struct hashEntry *_val) {
+  std::list<struct hashEntry *> *q =
+      static_cast<std::list<struct hashEntry *> *>(mq);
+  q->push_back(_val);
+}
+struct hashEntry *ListPopFront(void *mq) {
+  std::list<struct hashEntry *> *q =
+      static_cast<std::list<struct hashEntry *> *>(mq);
+  struct hashEntry *ret = q->front();
+  q->pop_front();
+  return ret;
+}
+struct hashEntry *ListPopBack(void *mq) {
+  std::list<struct hashEntry *> *q =
+      static_cast<std::list<struct hashEntry *> *>(mq);
+  struct hashEntry *ret = q->back();
+  q->pop_back();
+  return ret;
+}
+int ListSize(void *mq) {
+  std::list<struct hashEntry *> *q =
+      static_cast<std::list<struct hashEntry *> *>(mq);
+  if (!q->empty()) return q->size();
+  return 0;
+}
+
 void *flashCacheCreate(
     const char *_path, struct kvDb *db,
     const uint64_t max_size = std::numeric_limits<uint64_t>::max(),
@@ -85,9 +120,7 @@ void *flashCacheCreate(
   opt.write_buffer_size = server.flashCache_writebuffer_size;
   FlashCache *fcache = new FlashCache(opt, db);
   if (fcache->Open()) {
-#ifndef WITHOUT_LOG
     chLog(LOG_ERROR, "flash_cache open error");
-#endif
     exit(-1);
   }
   return static_cast<void *>(fcache);
@@ -102,9 +135,7 @@ int flashCacheInsert(void *fc, const char *_key, const char *_data,
   std::string Key(_key);
   std::string Val(_data);
   if (cache_->Insert(Key, _data)) {
-#ifndef WITHOUT_LOG
     chLog(LOG_ERROR, "flash_cache insert error");
-#endif
     return -1;
   }
   return 0;
@@ -114,7 +145,7 @@ char *flashCacheLookup(void *fc, const char *_key, size_t *size) {
   std::string Key(_key);
   return cache_->Lookup(Key, size);
 }
-void flashCacheMetakey(void *fc, const char *_key) {
+void flashCacheMetakeyDelete(void *fc, const char *_key) {
   FlashCache *cache_ = (FlashCache *)fc;
   std::string Key(_key);
   cache_->DeleteMetaData(Key);

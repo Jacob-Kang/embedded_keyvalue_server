@@ -6,6 +6,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "bworker.h"
+#include "command.h"
 #include "net.h"
 #include "util.h"
 #include "util_c++.h"
@@ -81,6 +82,7 @@ struct hash {
 struct kvDb {
   struct hash *memCache;
   void *memLRU;
+  void *memList;
   void *memQueue;
   // struct hash *expires;
   void *flashCache;

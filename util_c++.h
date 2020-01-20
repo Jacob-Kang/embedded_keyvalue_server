@@ -11,18 +11,25 @@
 extern "C" {
 #endif
 
-void *LRUCacheCreate(struct kvDb *db);
+void *LRUCacheCreate();
 void LRUCacheDestroy(void *mlru);
 int LRUCacheInsert(void *mlru, char *_key, struct hashEntry *_val);
 struct hashEntry *LRUCacheGet(void *mlru, char *_key);
 struct hashEntry *LRUCacheEvict(void *mlru);
 void LRUCacheErase(void *mlru, char *_key);
 
-void *QueueCreate(struct kvDb *db);
+void *QueueCreate();
 void QueueDestroy(void *q);
 void QueueEnqueue(void *mq, struct hashEntry *_val);
 struct hashEntry *QueueDequeue(void *mq);
 int QueueSize(void *mq);
+
+void *ListCreate();
+void ListPushFront(void *mq, struct hashEntry *_val);
+void ListPushBack(void *mq, struct hashEntry *_val);
+struct hashEntry *ListPopFront(void *mq);
+struct hashEntry *ListPopBack(void *mq);
+int ListSize(void *mq);
 
 // FlashCache
 void *flashCacheCreate(const char *_path, struct kvDb *db,
@@ -32,7 +39,7 @@ int flashCacheInsert(void *fc, const char *_key, const char *data,
                      const size_t size);
 char *flashCacheLookup(void *fc, const char *_key, size_t *size);
 int flashCacheErase(void *fc, const char *_key);
-void flashCacheMetakey(void *fc, const char *_key);
+void flashCacheMetakeyDelete(void *fc, const char *_key);
 
 #ifdef __cplusplus
 }

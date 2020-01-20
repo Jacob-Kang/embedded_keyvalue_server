@@ -7,8 +7,7 @@
 // #include "util_c++.h"
 int memUsedCheck(struct kvClient *c);
 int processCMD(struct kvClient *c);
-void setGenericCommand(struct kvClient *c, struct kvObject *key,
-                       struct kvObject *val);
-int getGenericCommand(struct kvClient *c, struct kvObject *key);
-
+void setCommand(struct kvClient *c, struct kvObject *key, struct kvObject *val);
+int getCommand(struct kvClient *c, struct kvObject *key);
+void evictAllCommand();
 #endif

@@ -69,13 +69,13 @@ int tcpRecv(struct kvClient *c) {
   int rst;
   rst = read(c->fd, c->querybuf->buf, KV_IOBUF_LEN);
   if (rst < 0) chLog(LOG_ERROR, "[%d] recv error", c->fd);
+  chLog(LOG_DEBUG, "[NET] %d: MSG Recived\n%s", c->fd, c->querybuf->buf);
   return rst;
-  // chLog(LOG_DEBUG, "[NET] %d: MSG Recived\n%s", c->fd, c->querybuf->buf);
 }
 
 void tcpSend(struct kvClient *c) {
   int rst;
   rst = write(c->fd, c->querybuf->buf, c->querybuf->len);
   if (rst <= 0) chLog(LOG_ERROR, "[%d] send error", c->fd);
-  // chLog(LOG_DEBUG, "[NET] %d: MSG Send\n%s", c->fd, c->querybuf->buf);
+  chLog(LOG_DEBUG, "[NET] %d: MSG Send\n%s", c->fd, c->querybuf->buf);
 }

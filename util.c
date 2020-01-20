@@ -162,6 +162,13 @@ void loadServerConfig(char *filename) {
                 "Invalid flashcache-size-mb, value <= 0 is not allowed");
           exit(-1);
         }
+      } else if (!strcasecmp(argv[0], "flashcache-size-kb") && argc == 2) {
+        server.flashCache_size = atoi(argv[1]) * 1024L;
+        if (server.flashCache_size <= 0) {
+          chLog(LOG_ERROR,
+                "Invalid flashcache-size-mb, value <= 0 is not allowed");
+          exit(-1);
+        }
       } else if (!strcasecmp(argv[0], "flashcache-file-size-kb") && argc == 2) {
         server.flashCache_file_size = atoi(argv[1]) * 1024;
         if (server.flashCache_file_size <= 0) {
@@ -320,7 +327,7 @@ void *chcalloc(size_t size) {
 void chfree(void *ptr) {
   int *used_size = (char *)ptr - sizeof(int);
   pthread_mutex_lock(&memory_mutex);
-  used_memory -= malloc_size(ptr);
+  used_memory -= *used_size;
   pthread_mutex_unlock(&memory_mutex);
   ptr = (char *)ptr - sizeof(int);
   free(ptr);

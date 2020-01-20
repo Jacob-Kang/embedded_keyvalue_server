@@ -63,3 +63,32 @@ struct hashEntry *entryFind(struct hash *mc, struct msg *key) {
   }
   return NULL;
 }
+
+int hashDelete(struct hash *mc, struct msg *key) {
+  int idx;
+  if (mc->ht[0].used > 0) {
+    struct hashEntry *he, *prevHe;
+    unsigned int hash_key = get_hash_key(key->buf);
+    idx = hash_key & mc->ht[0].sizemask;
+    he = mc->ht[0].table[idx];
+    prevHe = NULL;
+    while (he) {
+      if (!strcmp(he->key, key->buf)) {
+        chLog(LOG_NOTICE, "[hash] Delete - hash_key: %d, idx: %d, msg: %s",
+              hash_key, idx, he->key);
+        if (prevHe)
+          prevHe->next = he->next;
+        else
+          mc->ht[0].table[idx] = he->next;
+        chfree(he->key);
+        chfree(he->val);
+        chfree(he);
+        mc->ht[0].used--;
+        return 0;
+      }
+      prevHe = he;
+      he = he->next;
+    }
+  }
+  return -1;
+}

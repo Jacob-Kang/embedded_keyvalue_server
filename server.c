@@ -17,6 +17,8 @@ static void sigShutdownHandler(int sig) {
   chLog(LOG_NOTICE, "%s", msg);
   if (sig == SIGINT) {
     printf("You insist... exiting now.\n");
+    evictAllCommand();
+    chLog(LOG_NOTICE, "[server] Evict all complete");
     flashCacheDestroy(server.db->flashCache);
     exit(1);
   }
@@ -49,9 +51,10 @@ void initServer(void) {
     server.db->memCache->ht[0].table =
         chcalloc(sizeof(struct hashEntry*) * 100);
     server.db->memCache->iterators = 0;
+    server.db->memList = ListCreate();
   } else if (server.cache_mode == MODE_MEM_LRU)
-    server.db->memLRU = LRUCacheCreate(server.db);
-  server.db->memQueue = QueueCreate(server.db);
+    server.db->memLRU = LRUCacheCreate();
+  server.db->memQueue = QueueCreate();
   server.db->flashCache =
       flashCacheCreate(server.flashCache_dir, server.db, server.flashCache_size,
                        server.flashCache_file_size);

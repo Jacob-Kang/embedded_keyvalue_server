@@ -13,10 +13,8 @@ int FileExists(const std::string& fname) {
     case ENOTDIR:
       return 1;
     default:
-#ifndef WITHOUT_LOG
       chLog(LOG_ERROR, "Unexpected error(%s) accessing file %s", result,
             fname.c_str());
-#endif
       break;
   }
   return 0;
@@ -105,14 +103,10 @@ int WriteableCacheFile::NewWritableFile(const std::string& fname) {
 }
 
 bool WriteableCacheFile::Create() {
-#ifndef WITHOUT_LOG
   chLog(LOG_NOTICE, "[FlashCache] Creating new cache %s (max size is %d KB)",
         Path().c_str(), max_size_ / 1024);
-#endif
   if (!FileExists(Path())) {
-#ifndef WITHOUT_LOG
     chLog(LOG_ERROR, "[FlashCache] File %s already exists.", Path().c_str());
-#endif
   } else {
     fd_ = open(Path().c_str(), O_CREAT | O_RDWR | O_TRUNC, 0644);
 #ifdef __APPLE__
@@ -137,34 +131,17 @@ bool WriteableCacheFile::Create() {
 }
 
 bool WriteableCacheFile::Open() {
-  // open(Path().c_str(), O_RDONLY);
   FILE* fp = fopen(Path().c_str(), "r");
   fseek(fp, 0, SEEK_END);
   filesize_ = ftell(fp);
   fd_ = fileno(fp);
   eof_ = true;
+  chLog(LOG_NOTICE, "Opening file %s. size=%d", Path().c_str(), filesize_);
   return true;
-  // rwlock_.AssertHeld();
-
-  // ROCKS_LOG_DEBUG(log_, "Opening cache file %s", Path().c_str());
-  // std::unique_ptr<RandomAccessFile> file;
-  // Status status =
-  //     NewRandomAccessCacheFile(env_, Path(), &file, enable_direct_reads);
-  // if (!status.ok()) {
-  //   Error(log_, "Error opening random access file %s. %s", Path().c_str(),
-  //         status.ToString().c_str());
-  //   return false;
-  // }
-  // // freader_.reset(new RandomAccessFileReader(std::move(file), Path(),
-  // env_)); freader_.reset(new RandomAccessFileReader(std::move(file), env_));
-
-  // return true;
 }
 void WriteableCacheFile::Close() {
-#ifndef WITHOUT_LOG
   chLog(LOG_NOTICE, "Closing file %s. size=%d written=%d", Path().c_str(),
         filesize_, disk_woff_);
-#endif
   if (tid.joinable()) {
     eof_ = true;
     // 강제 write를 위한 임시 증가
@@ -178,9 +155,7 @@ void WriteableCacheFile::Close() {
 void WriteableCacheFile::ClearBuffers() {
   while (!bufs_.empty()) {
     auto it = bufs_.back();
-#ifndef WITHOUT_LOG
     chLog(LOG_DEBUG, "[FlashCache] %s: dealloc buffers", Path().c_str());
-#endif
     // if (!buf) {
     //   chLog(LOG_ERROR, "[FlashCache] already empty! Unable to dealloc
     //   buffers"); return false;
@@ -192,10 +167,8 @@ void WriteableCacheFile::ClearBuffers() {
 int WriteableCacheFile::Delete() {
   Close();
   if (unlink(Path().c_str()) != 0) {
-#ifndef WITHOUT_LOG
     chLog(LOG_ERROR, "[FlashCache] %s: Delete error %d %s", Path().c_str(),
           errno, strerror(errno));
-#endif
     return 0;
   }
   return filesize_;
@@ -215,20 +188,21 @@ void WriteableCacheFile::Repair(void* metadata_) {
     lba_.off_ = start_pos;
     lba_.size_ = hdr_.key_size_ + hdr_.val_size_ + sizeof(hdr_);
     pmetadata_->Insert(key_, lba_);
+    key_lists_.push_back(key_);
     start_pos += lba_.size_;
     delete[] temp_key;
   }
 }
 void WriteableCacheFile::Write() {
   sem_wait(sem_writer);
-#ifndef WITHOUT_LOG
   chLog(LOG_NOTICE, "[FlashCache] (%d.rc): writerJobs start, %d/%d", cache_id_,
         buf_doff_, buf_woff_);
-#endif
+  FlashCache* fc = static_cast<FlashCache*>(cache_);
   while (buf_doff_ < buf_woff_) {
     auto buf_ = bufs_[buf_doff_];
     const char* src = buf_->Data();
     size_t left = buf_->Used();
+    fc->Evict(left);
     while (left != 0) {
       ssize_t done = write(fd_, src, left);
       if (done < 0) {
@@ -266,19 +240,15 @@ void WriteableCacheFile::Write(const char* src, int size_) {
 }
 void* WriteableCacheFile::writerJobs(void* arg) {
   WriteableCacheFile* this_obj = (WriteableCacheFile*)arg;
-#ifndef WITHOUT_LOG
   chLog(LOG_NOTICE, "[FlashCache] (%d.rc): writerJobs created",
         this_obj->cache_id_);
-#endif
   for (;;) {
     this_obj->Write();
     if (this_obj->eof_) break;
   }
   this_obj->ClearBuffers();
-#ifndef WITHOUT_LOG
   chLog(LOG_NOTICE, "[FlashCache] (%d.rc): writerJobs finished",
         this_obj->cache_id_);
-#endif
   return NULL;
 }
 
@@ -334,10 +304,8 @@ bool WriteableCacheFile::Append(const std::string& key, const std::string& val,
   if (server.flashcache_mode == MODE_FLASH_WRITEBUFFER) {
     if (!ExpandBuffer(rec_size)) {
       // unable to expand the buffer
-#ifndef WITHOUT_LOG
       chLog(LOG_ERROR, "[FlashCache] Error expanding buffers. size=%d",
             rec_size);
-#endif
       return false;
     }
     // bufs에 serial된 rec를 기록
@@ -429,11 +397,9 @@ bool WriteableCacheFile::Read(const LBA& lba, std::string* key,
   }
   CacheRecord rec;
   if (!rec.Deserialize(scratch, read_size)) {
-#ifndef WITHOUT_LOG
     chLog(LOG_ERROR,
           "[FlashCache] Error de-serializing record from file %s off %d",
           Path().c_str(), lba.off_);
-#endif
     return false;
   }
   *key = rec.key_;
@@ -443,27 +409,21 @@ bool WriteableCacheFile::Read(const LBA& lba, std::string* key,
 
 // bool Metadata::Insert(const uint32_t cache_id, WriteableCacheFile* file) {
 //   cache_file_index_.insert(std::make_pair(cache_id, file));
-// #ifndef WITHOUT_LOG
 //   chLog(LOG_DEBUG, "[FlashCache] insert.meta - key: %d, val: &file(%p)",
 //         cache_id, static_cast<void*>(file));
-// #endif
 //   return true;
 // }
 bool Metadata::Insert(const uint32_t cache_id, WriteableCacheFile* file) {
   cache_file_index_.insert(cache_id, file);
-#ifndef WITHOUT_LOG
   chLog(LOG_DEBUG, "[FlashCache] insert.meta - key: %d, val: &file(%p)",
         cache_id, static_cast<void*>(file));
-#endif
   return true;
 }
 void Metadata::Insert(const std::string& key, const LBA& lba) {
   block_index_.insert(std::make_pair(key, lba));
-#ifndef WITHOUT_LOG
   chLog(LOG_DEBUG,
         "[FlashCache] insert.meta - key: %s, val: (lba.cid: %d, lba.off: %d)",
         key.data(), lba.cache_id_, lba.off_);
-#endif
 }
 
 bool Metadata::Lookup(const std::string& key, LBA* lba) {
@@ -485,10 +445,18 @@ WriteableCacheFile* Metadata::Lookup(const uint32_t cache_id) {
   auto find_obj = cache_file_index_.get(cache_id);
   return find_obj;
 }
-void Metadata::Erase(const std::string& key) { block_index_.erase(key); }
+void Metadata::Erase(const std::string& key) {
+  LBA lba = block_index_[key];
+  block_index_.erase(key);
+  chLog(LOG_DEBUG,
+        "[FlashCache] Erase meta - key: %s, val: (lba.cid: %d, lba.off: %d)",
+        key.data(), lba.cache_id_, lba.off_);
+}
 WriteableCacheFile* Metadata::Evict() {
   auto ret = cache_file_index_.evict();
   cache_file_index_.erase(ret->cacheid());
+  chLog(LOG_DEBUG, "[FlashCache] Evict meta - key: %d, val: &file(%p)",
+        ret->cacheid(), static_cast<void*>(ret));
   return ret;
 }
 int FlashCache::Open() {
@@ -502,9 +470,10 @@ int FlashCache::Open() {
           it.substr(it.length() - 3, 3) == std::string(".rc")) {
         chLog(LOG_DEBUG, "[FlashCache] Repair MetaData! %s", it.c_str());
         int cache_id_ = atoi(it.substr(0, it.length() - 3).c_str());
-        std::unique_ptr<WriteableCacheFile> f(
-            new WriteableCacheFile(opt_.path, cache_id_, 0, 0));
+        std::unique_ptr<WriteableCacheFile> f(new WriteableCacheFile(
+            opt_.path, cache_id_, 0, 0, static_cast<void*>(this)));
         f->Open();
+        size_ += f->getFilesize();
         f->Repair(&metadata_);
         metadata_.Insert(cache_id_, f.release());
         writer_cache_id_ =
@@ -513,10 +482,8 @@ int FlashCache::Open() {
     }
   }
   if (NewCacheFile()) {
-#ifndef WITHOUT_LOG
     chLog(LOG_ERROR, "[FlashCache] Error creating new file %s.",
           opt_.path.c_str());
-#endif
     return -1;
   }
   return 0;
@@ -536,15 +503,13 @@ int FlashCache::Close() {
 int FlashCache::NewCacheFile() {
   std::unique_ptr<WriteableCacheFile> f(
       new WriteableCacheFile(opt_.path, writer_cache_id_, opt_.cache_file_size,
-                             opt_.write_buffer_size));
+                             opt_.write_buffer_size, static_cast<void*>(this)));
   if (!f->Create()) {
     chLog(LOG_ERROR, "[FlashCache] Error creating file");
     exit(-1);
   }
-#ifndef WITHOUT_LOG
-  chLog(LOG_NOTICE, "[FlashCache] (%d.rc): Created cache file",
-        writer_cache_id_);
-#endif
+  chLog(LOG_NOTICE, "[FlashCache] (%d.rc): Created cache file (%d / %d)",
+        writer_cache_id_, size_, opt_.cache_size);
   cache_file_ = f.release();
   // Metadata insert for search
   if (!metadata_.Insert(writer_cache_id_, cache_file_)) {
@@ -556,28 +521,28 @@ int FlashCache::NewCacheFile() {
 }
 int FlashCache::Insert(const std::string& key, const std::string& value) {
   LBA lba;
+  pthread_mutex_lock(&fcache_mutex);
   while (!cache_file_->Append(key, value, &lba)) {
     if (!cache_file_->Eof()) {
-#ifndef WITHOUT_LOG
       chLog(LOG_ERROR, "[FlashCache] Error inserting to cache file %d",
             cache_file_->cacheid());
-#endif
       return -1;
     }
     if (NewCacheFile()) {
-#ifndef WITHOUT_LOG
       chLog(LOG_ERROR, "[FlashCache] Error creating new file %s.",
             opt_.path.c_str());
-#endif
       return -1;
     }
   }
+  size_ += lba.size_;
   metadata_.Insert(key, lba);
+  pthread_mutex_unlock(&fcache_mutex);
   return 0;
 }
 char* FlashCache::Lookup(const std::string& key, size_t* size) {
   LBA lba;
   bool status;
+  pthread_mutex_lock(&fcache_mutex);
   status = metadata_.Lookup(key, &lba);
   if (!status) {
     chLog(LOG_ERROR, "[FlashCache] lookup() key not found");
@@ -596,16 +561,26 @@ char* FlashCache::Lookup(const std::string& key, size_t* size) {
   char* val = new char[blk_val.size()];
   memcpy(val, blk_val.data(), blk_val.size());
   *size = blk_val.size();
-
+  pthread_mutex_unlock(&fcache_mutex);
   return val;
 }
-bool FlashCache::Evict() {
-  WriteableCacheFile* f = metadata_.Evict();
-  size_ -= f->Delete();
-  for (auto it : f->key_lists()) {
-    metadata_.Erase(it);
+bool FlashCache::Evict(const size_t size) {
+  // WriteLock _(&lock_);
+  while ((size + size_ > opt_.cache_size * 1.0f)) {
+    chLog(LOG_NOTICE, "[FlashCache] Evict start - size: %d/%d", size_,
+          opt_.cache_size);
+    pthread_mutex_lock(&fcache_mutex);
+
+    WriteableCacheFile* f = metadata_.Evict();
+    size_ -= f->Delete();
+    for (auto it : f->key_lists()) {
+      metadata_.Erase(it);
+    }
+    chLog(LOG_NOTICE, "[FlashCache] (%d.rc) Evicted - size: %d", f->cacheid(),
+          f->getFilesize());
+    delete f;
+    pthread_mutex_unlock(&fcache_mutex);
   }
-  delete f;
   return true;
 }
 

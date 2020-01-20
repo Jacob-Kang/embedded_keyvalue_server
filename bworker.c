@@ -1,8 +1,11 @@
 #include "bworker.h"
 pthread_t bworker_threads[MAX_BWORKER];
 pthread_mutex_t bworker_mutex;
+#ifdef __APPLE__
 sem_t *sem_bworker;
-
+#else
+sem_t sem_bworker;
+#endif
 void *bworkerRecvJobs(void *arg) {
   int id = (int)arg;
   struct kvClient *c = server.clients[id];
@@ -60,13 +63,18 @@ void *bworkerProcessBackgroundJobs(void *arg) {
       struct hashEntry *he = QueueDequeue(server.db->memQueue);
       char *evict_key = he->key;
       struct kvObject *valueObj = he->val;
+      chLog(LOG_NOTICE, "[BWK] Flush start key: %s", evict_key);
       pthread_mutex_lock(&bworker_mutex);
       flashCacheInsert(server.db->flashCache, evict_key, valueObj->ptr->buf,
                        valueObj->ptr->len);
-      LRUCacheErase(server.db->memLRU, evict_key);
-      chfree(he->key);
-      chfree(he->val);
-      chfree(he);
+      if (server.cache_mode == MODE_MEM_FIFO)
+        hashDelete(server.db->memCache, evict_key);
+      else if (server.cache_mode == MODE_MEM_LRU) {
+        LRUCacheErase(server.db->memLRU, evict_key);
+        chfree(he->key);
+        chfree(he->val);
+        chfree(he);
+      }
       pthread_mutex_unlock(&bworker_mutex);
     }
   }

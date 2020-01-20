@@ -116,17 +116,16 @@ struct FlashCacheConfig {
 class WriteableCacheFile {
  public:
   WriteableCacheFile(const std::string& dir, const uint32_t cache_id,
-                     const uint32_t max_size, const uint32_t write_buffer_size)
+                     const uint32_t max_size, const uint32_t write_buffer_size,
+                     const void* cache)
       : dir_(dir),
         cache_id_(cache_id),
         write_buffer_size_(write_buffer_size),
-        max_size_(max_size) {}
+        max_size_(max_size),
+        cache_(const_cast<void*>(cache)) {}
   ~WriteableCacheFile() {
-    // pthread_join(tid, nullptr);
-    // close(fd_);
-#ifndef WITHOUT_LOG
+    Close();
     chLog(LOG_NOTICE, "[FlashCache] %d.rc ~WriteableCacheFile()", cacheid());
-#endif
   }
   bool Create();
   int NewWritableFile(const std::string& fname);
@@ -149,10 +148,12 @@ class WriteableCacheFile {
     return dir_ + "/" + std::to_string(_cache_id) + ".rc";
   }
   int cacheid() { return cache_id_; }
+  int getFilesize() { return filesize_; }
   bool Eof() const { return eof_; }
   std::list<std::string>& key_lists() { return key_lists_; }
 
  private:
+  void* cache_;
   bool ReadBuffer(const LBA& lba, char* scratch);
   void ClearBuffers();
   static const size_t kFileAlignmentSize = 4 * 1024;  // align file size
@@ -172,7 +173,12 @@ class WriteableCacheFile {
       0;  // 써야할 cache buffer indx, 0이면 아직 하나도 생성 안한것임.
   size_t buf_doff_ = 0;  // dispatch 해야할 cache buffer index
   bool is_writer_running = false;  // bg로 버퍼에서 실제파일로 기록중인 작업 수
+#ifdef __APPLE__
   sem_t* sem_writer;
+#else
+  sem_t sem_writer;
+
+#endif
   std::thread tid;
 };
 
@@ -201,7 +207,9 @@ class Metadata {
 class FlashCache {
  public:
   explicit FlashCache(const FlashCacheConfig& opt, struct kvDb* db)
-      : opt_(opt), db_(db){};
+      : opt_(opt), db_(db) {
+    pthread_mutex_init(&fcache_mutex, NULL);
+  };
   //  opt_.write_buffer_size, opt_.write_buffer_count());
   ~FlashCache() {
     chLog(LOG_NOTICE, "[FlashCache] ~FlashCache()");
@@ -211,7 +219,7 @@ class FlashCache {
   int Close();
   int Insert(const std::string& key, const std::string& data);
   char* Lookup(const std::string& key, size_t* size);
-  bool Evict();
+  bool Evict(const size_t size);
   void DeleteMetaData(std::string& key);
   // bool Reserve(const size_t size);
 
@@ -219,6 +227,7 @@ class FlashCache {
   // int OpenCacheFile(uint32_t cache_id, int32_t thread_id = 0);
 
  private:
+  pthread_mutex_t fcache_mutex;
   std::string key_;
   std::string data_;
   uint64_t size_;  // flash cache 전체 크기
